@@ -1,0 +1,21 @@
+SAVE-B:
+  train:
+    lr: 0.000067
+    batch_size: 1024
+    weight_decay: 0.000005
+    iter: 3200
+    epoch: 200
+    is_lr_scheduler: True
+  model:
+    hidden_dim: 64
+    enc_dim: 22
+    expand_dim: 256
+    enc_num_heads: 4
+    dec_num_heads: 4
+    enc_depth: 3
+    dec_depth: 3
+    enc_affine: True
+    enc_norm_type: 'ln'
+    dec_norm_init: True
+    dec_blk_type: 'adaLN'
+    is_initialize: True
