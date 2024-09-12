@@ -25,14 +25,14 @@ The data sources listed in the article are publicly available.
 
 Followings are our todo list about experiment demo.
 
-- [x] [integration](/exps/integration_SAVE.ipynb)
-- [ ] online integration
-- [ ] molecular space integraiton
-- [ ] perturbation prediction
+- [x] [integration](/exps/integration.ipynb)
+- [x] [online integration](exps/online_integration.ipynb)
+- [x] [molecular space integraiton](exps/molecular_integration.ipynb)
+- [x] [perturbation prediction](exps/perturbation_prediction.ipynb)
 - [ ] multi-condtion perturbation prediction
-- [ ] rare cell type generation
+- [x] [rare cell type generation](exps/rare_cell_generation.ipynb)
 - [ ] zero-shot generation
 
 
 ## Concat
-- Jiahao Li: lijiahao23@m.fudan.edu.cn
+- Jiahao Li: lijiahao23@m.fudan.edu.cn 
