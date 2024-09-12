@@ -4,7 +4,6 @@
 
 This repository contains code from the paper SAVE: online integration and zero-shot generation of single-cell data via adaptive condition guidance.
 
-![app](./figure/application.png)
 
 ## Dependency
 
@@ -26,7 +25,9 @@ The data sources listed in the article are publicly available.
 
 ## Usage
 
-Followings are our todo list about experiment demo.
+![app](./figure/application.png)
+
+Followings are our todo list about experiment tutorial.
 
 - [x] [integration](/exps/integration.ipynb)
 - [x] [online integration](exps/online_integration.ipynb)
