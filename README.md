@@ -1,7 +1,10 @@
 # SAVE: online integration and zero-shot generation of single-cell data via adaptive condition guidance
 
+![framework](./figure/framework.png)
+
 This repository contains code from the paper SAVE: online integration and zero-shot generation of single-cell data via adaptive condition guidance.
 
+![app](./figure/application.png)
 
 ## Dependency
 
@@ -29,9 +32,9 @@ Followings are our todo list about experiment demo.
 - [x] [online integration](exps/online_integration.ipynb)
 - [x] [molecular space integraiton](exps/molecular_integration.ipynb)
 - [x] [perturbation prediction](exps/perturbation_prediction.ipynb)
-- [ ] multi-condtion perturbation prediction
+- [x] [multi-condtion perturbation prediction](exps/multi_cond_prediction)
 - [x] [rare cell type generation](exps/rare_cell_generation.ipynb)
-- [ ] zero-shot generation
+- [x] [zero-shot generation](exps/zero_shot_generation)
 
 
 ## Concat
