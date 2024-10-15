@@ -180,8 +180,11 @@ class SAVE:
         weight_decay: float = 5e-4,
         is_lr_scheduler: bool = False,
         col_msk_threshold: int = -1,
+        loss_monitor = None,
+        session = None,
         **kwargs,
     ):
+
         dataloader = convert_adata_to_dataloader(
             self.adata,
             batch_size=batch_size,
@@ -189,9 +192,9 @@ class SAVE:
             condition_cols=self.condition_cols,
         )
 
-        if epoch * len(dataloader) < iter:
-            epoch = int(iter / len(dataloader))
+        # if epoch * len(dataloader) < iter:
 
+        epoch = int(iter / len(dataloader))
         print(f"total iter: {epoch * len(dataloader)}")
 
         self.model.to(self.device)
@@ -209,6 +212,8 @@ class SAVE:
             weight_decay=weight_decay,
             is_lr_scheduler=is_lr_scheduler,
             col_msk_threshold=col_msk_threshold,
+            loss_monitor = loss_monitor,
+            session = session,
         )
 
         self.is_trained = True

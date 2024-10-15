@@ -5,6 +5,7 @@ import torch.nn as nn
 import random
 import numpy as np
 from torch.distributions import Normal
+from torch.functional import F
 from timm.models.vision_transformer import Mlp
 from timm.models.vision_transformer import Attention
 from itertools import combinations
@@ -73,20 +74,44 @@ class DiTblock(nn.Module):
             nn.SiLU(), nn.Linear(feature_dim, 6 * feature_dim, bias=True)
         )
 
-    def forward(self, x, c):
+    def forward(self, x, c=None):
         # 将 condition 投影到 6 * hiddensize 之后沿列切成 6 份
-        shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (
-            self.adaLN_modulation(c).chunk(6, dim=1)
-        )
-        # attention blk
-        x = x + gate_msa.unsqueeze(1) * self.attn(
-            modulate(self.norm1(x), shift_msa, scale_msa)
-        )
-        # mlp blk 采用 ViT 中实现的版本
-        x = x + gate_mlp.unsqueeze(1) * self.mlp(
-            modulate(self.norm2(x), shift_mlp, scale_mlp)
-        )
+        if c is not None:
+            shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (
+                self.adaLN_modulation(c).chunk(6, dim=1)
+            )
+
+            # attention blk
+            x = x + gate_msa.unsqueeze(1) * self.attn(
+                modulate(self.norm1(x), shift_msa, scale_msa)
+            )
+
+            # mlp blk 采用 ViT 中实现的版本
+            x = x + gate_mlp.unsqueeze(1) * self.mlp(
+                modulate(self.norm2(x), shift_mlp, scale_mlp)
+            )
+
+        else:
+            x = x * self.attn(
+                self.norm1(x)
+            )
+
+            x = x  * self.mlp(
+                self.norm2(x)
+            )
         return x
+
+class QNetwork(nn.Module):
+    def __init__(self, z_dim, c_dim):
+        super(QNetwork, self).__init__()
+        self.fc1 = nn.Linear(z_dim, 128)
+        self.fc2 = nn.Linear(128, 128)
+        self.fc3 = nn.Linear(128, c_dim)  # c_dim 是条件的维度
+
+    def forward(self, z):
+        x = F.relu(self.fc1(z))
+        x = F.relu(self.fc2(x))
+        return F.log_softmax(self.fc3(x), dim=-1)  # 输出 c 的概率分布
 
 
 class TimestepEmbedder(nn.Module):
@@ -192,9 +217,9 @@ class AttentionEncoder(nn.Module):
         super().__init__(**kwargs)
         self.expand_dim = expand_dim
 
-        self.input_layer = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
-        )
+        # self.input_layer = nn.Sequential(
+        #     nn.Linear(input_dim, hidden_dim),
+        # )
 
         self.expand_layer = nn.Linear(1, expand_dim)
 
@@ -211,15 +236,18 @@ class AttentionEncoder(nn.Module):
                 )
             )
 
-        self.var_enc = nn.Sequential(nn.Linear(expand_dim * hidden_dim, enc_dim))
+        # self.var_enc = nn.Sequential(nn.Linear(expand_dim * hidden_dim, enc_dim))
+        # self.mu_enc = nn.Sequential(nn.Linear(expand_dim * hidden_dim, enc_dim))
 
-        self.mu_enc = nn.Sequential(nn.Linear(expand_dim * hidden_dim, enc_dim))
+        self.var_enc = nn.Sequential(nn.Linear(expand_dim * input_dim, enc_dim))
+        self.mu_enc = nn.Sequential(nn.Linear(expand_dim * input_dim, enc_dim))
 
     def reparameterize(self, mu, var):
         return Normal(mu, var.sqrt()).rsample()
 
     def forward(self, x, y=None):
-        h = self.input_layer(x).unsqueeze(-1)
+        # h = self.input_layer(x).unsqueeze(-1)
+        h = x.unsqueeze(-1)
         h = self.expand_layer(h)
 
         for blk in self.blks:

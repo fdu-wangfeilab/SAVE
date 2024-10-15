@@ -3,7 +3,7 @@ SAVE-B:
     lr: 0.000067
     batch_size: 1024
     weight_decay: 0.000005
-    iter: 3200
+    iter: 10000
     epoch: 200
     is_lr_scheduler: True
   model:

@@ -43,6 +43,8 @@ def vae_train(
     is_lr_scheduler=False,
     weight_decay=5e-4,
     col_msk_threshold=0.8,
+    loss_monitor=None,
+    session = None,
     **kwargs,
 ):
     random.seed(seed)
@@ -78,7 +80,12 @@ def vae_train(
             # using bce loss estimating the error
             recon_loss = F.binary_cross_entropy(recon_x, x) * x.size(-1)
             kl_loss = kl_div(mu, var)
+
+            if loss_monitor is not None:
+                loss_monitor.log({"recon_loss": recon_loss, "kl_loss": kl_scale * kl_loss})
             loss = {"recon_loss": recon_loss, "kl_loss": kl_scale * kl_loss}
+            if session is not None:
+                session.report({"loss": sum(loss.values()).item()})
 
             optimizer.zero_grad()
             sum(loss.values()).backward()
