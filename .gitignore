@@ -187,3 +187,4 @@ scDisInFact_results/*
 *.npy
 /exps/batch_transfer/simu_data/*
 /total_exp_res
+/wandb/*

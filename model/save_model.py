@@ -115,7 +115,7 @@ class SAVE:
         self.is_trained = False
 
         self.condition_cols = condition_cols
-        self.condition_dict = self.get_cond_correspond_idx()
+        self.condition_dict, self.cond_idx_max = self.get_cond_correspond_idx()
 
         # to stablize model initial performance
         np.random.seed(seed)
@@ -138,6 +138,7 @@ class SAVE:
             dec_blk_type=dec_blk_type,
             is_initialize=is_initialized,
             len_col_comb=len(self.condition_cols),
+            num_class = self.cond_idx_max,
         )
 
         if is_initialized:
@@ -167,13 +168,14 @@ class SAVE:
 
             total_cond_dict[col] = batch_idx
             idx_max = idx_max + cond_codes.max() + 1
-        return total_cond_dict
+        return total_cond_dict, idx_max
 
     def train(
         self,
         epoch: int = 15,
         batch_size: int = 64,
         lr: float = 0.00015,
+        lr_milestone :int = 1000,
         seed: int = 1202,
         is_grad_clip: bool = True,
         iter: int = 8000,
@@ -181,6 +183,7 @@ class SAVE:
         is_lr_scheduler: bool = False,
         col_msk_threshold: int = -1,
         loss_monitor = None,
+        mi_scale = None,
         session = None,
         **kwargs,
     ):
@@ -194,26 +197,29 @@ class SAVE:
 
         # if epoch * len(dataloader) < iter:
 
-        epoch = int(iter / len(dataloader))
-        print(f"total iter: {epoch * len(dataloader)}")
+        # epoch = int(iter / len(dataloader))
+        # print(f"total iter: {epoch * len(dataloader)}")
 
         self.model.to(self.device)
 
         vae_train(
             vae=self.model,
             dataloader=dataloader,
-            num_epoch=epoch,
+            num_step=iter,
             device=self.device,
             kl_scale=0.5,
             is_tensorboard=False,
             grad_clip=is_grad_clip,
             lr=lr,
+            lr_milestone=lr_milestone,
             seed=seed,
             weight_decay=weight_decay,
             is_lr_scheduler=is_lr_scheduler,
             col_msk_threshold=col_msk_threshold,
             loss_monitor = loss_monitor,
+            mi_scale=mi_scale,
             session = session,
+            num_class = self.cond_idx_max,
         )
 
         self.is_trained = True

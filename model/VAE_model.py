@@ -101,17 +101,6 @@ class DiTblock(nn.Module):
             )
         return x
 
-class QNetwork(nn.Module):
-    def __init__(self, z_dim, c_dim):
-        super(QNetwork, self).__init__()
-        self.fc1 = nn.Linear(z_dim, 128)
-        self.fc2 = nn.Linear(128, 128)
-        self.fc3 = nn.Linear(128, c_dim)  # c_dim 是条件的维度
-
-    def forward(self, z):
-        x = F.relu(self.fc1(z))
-        x = F.relu(self.fc2(x))
-        return F.log_softmax(self.fc3(x), dim=-1)  # 输出 c 的概率分布
 
 
 class TimestepEmbedder(nn.Module):
@@ -217,9 +206,9 @@ class AttentionEncoder(nn.Module):
         super().__init__(**kwargs)
         self.expand_dim = expand_dim
 
-        # self.input_layer = nn.Sequential(
-        #     nn.Linear(input_dim, hidden_dim),
-        # )
+        self.input_layer = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+        )
 
         self.expand_layer = nn.Linear(1, expand_dim)
 
@@ -236,18 +225,18 @@ class AttentionEncoder(nn.Module):
                 )
             )
 
-        # self.var_enc = nn.Sequential(nn.Linear(expand_dim * hidden_dim, enc_dim))
-        # self.mu_enc = nn.Sequential(nn.Linear(expand_dim * hidden_dim, enc_dim))
+        self.var_enc = nn.Sequential(nn.Linear(expand_dim * hidden_dim, enc_dim))
+        self.mu_enc = nn.Sequential(nn.Linear(expand_dim * hidden_dim, enc_dim))
 
-        self.var_enc = nn.Sequential(nn.Linear(expand_dim * input_dim, enc_dim))
-        self.mu_enc = nn.Sequential(nn.Linear(expand_dim * input_dim, enc_dim))
+        # self.var_enc = nn.Sequential(nn.Linear(expand_dim * input_dim, enc_dim))
+        # self.mu_enc = nn.Sequential(nn.Linear(expand_dim * input_dim, enc_dim))
 
     def reparameterize(self, mu, var):
         return Normal(mu, var.sqrt()).rsample()
 
     def forward(self, x, y=None):
-        # h = self.input_layer(x).unsqueeze(-1)
-        h = x.unsqueeze(-1)
+        h = self.input_layer(x).unsqueeze(-1)
+        # h = x.unsqueeze(-1)
         h = self.expand_layer(h)
 
         for blk in self.blks:
@@ -411,6 +400,20 @@ class AttentionDecoder(nn.Module):
         return self.out_layer(h)
 
 
+class QNetwork(nn.Module):
+    def __init__(self, z_dim, c_dim):
+        super(QNetwork, self).__init__()
+        self.fc = nn.Sequential(
+            nn.Linear(z_dim, 128),
+            nn.ReLU(),
+            nn.Linear(128, 128),
+            nn.ReLU(),
+            nn.Linear(128, c_dim),
+        )
+
+    def forward(self, z):
+        return F.softmax(self.fc(z), dim=-1)  # 输出 c 的概率分布
+
 class VAE(nn.Module):
     def __init__(
         self,
@@ -428,6 +431,7 @@ class VAE(nn.Module):
         dec_blk_type="adaLN",
         is_initialize=False,
         len_col_comb=None,
+        num_class= None,
     ) -> None:
         super().__init__()
         # for parameter record
@@ -455,6 +459,8 @@ class VAE(nn.Module):
             bn_affine=enc_affine,
             norm_type=enc_norm_type,
         )
+
+        self.q_net = QNetwork(enc_dim, num_class)
 
         self.decoder = AttentionDecoder(
             input_dim=enc_dim,

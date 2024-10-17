@@ -40,12 +40,11 @@ def do_train(config):
 
     kwargs.update(setting["SAVE-B"]["train"])
     kwargs.update(setting["SAVE-B"]["model"])
-    kwargs['iter'] = 10000
-    kwargs["batch_size"] = 48
+    kwargs["iter"] = 5000
+    kwargs["lr_milestone"] = config["lr_milestone"]
 
-    kwargs['lr'] = config['lr']
-    kwargs['expand_dim'] = config['expand_dim']
-    kwargs['weight_decay'] = config['weight_decay']
+    kwargs["lr"] = config["lr"]
+    kwargs["weight_decay"] = config["weight_decay"]
 
     from model.save_model import SAVE
 
@@ -64,13 +63,13 @@ def ray_tune():
     tracemalloc.start()
     search_space = {
         "lr": tune.loguniform(1e-6, 5e-3),
-        "expand_dim": tune.choice([8, 16, 32]),
+        # "expand_dim": tune.choice([8, 16, 32]),
+        # "mi_scale": tune.choice([0.1, 0.01, 0.001, 1e-4]),
+        "lr_milestone": tune.choice([500, 1000, 2000]),
         "weight_decay": tune.loguniform(1e-5, 1e-3),
     }
 
-    scheduler = ASHAScheduler(
-        max_t=2000, grace_period=10, reduction_factor=4
-    )
+    scheduler = ASHAScheduler(max_t=5000, grace_period=10, reduction_factor=4)
 
     optuna_search = OptunaSearch()
 
@@ -90,6 +89,6 @@ def ray_tune():
 
 
 if __name__ == "__main__":
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
     os.environ["RAY_SESSION_DIR"] = "/home/lijiahao/ray_session"
     ray_tune()

@@ -1,11 +1,13 @@
 # %%
 import scanpy as sc
 import torch
+import pandas as pd
 import wandb
 
 import os
 import sys
 
+from scib_metrics.benchmark import Benchmarker
 pwd = "/home/lijiahao/workbench/SAVE/"
 sys.path.append(pwd)
 os.chdir(pwd)
@@ -27,27 +29,38 @@ def do_train():
 
     kwargs.update(setting["SAVE-B"]["train"])
     kwargs.update(setting["SAVE-B"]["model"])
-    kwargs['iter'] = 5000
-    kwargs["batch_size"] = 1024
-    kwargs['lr_milestone'] = 1000
+    kwargs["iter"] = 5000
+    kwargs["batch_size"] = 48
 
-    kwargs['lr'] = 0.00475898
-    kwargs['expand_dim'] = 16
-    kwargs['weight_decay'] = 6.83645e-05
+    kwargs["lr"] = 0.0008761953163128317
+    kwargs["expand_dim"] = 32
+    kwargs["weight_decay"] = 2.4443717513092533e-05
 
     from model.save_model import SAVE
 
-    run = wandb.init(project="SAVE_mi", config=kwargs)
+    # for step in range(0, 10000, 1000):
     save_model = SAVE(
         adata=adata.copy(),
         is_initialized=True,
         condition_cols=["batch"],
         **kwargs,
     )
-    save_model.train(loss_monitor=run, session=None, **kwargs)
-    save_model.save_ckpt('./ckpt/SAVE_MI_loss_1016_warmup.pt')
+    save_model.load_ckpt(f"./ckpt/SAVE_MI_1016_warmup_opt.pt")
+    latent = save_model.get_latent(batch_size=32)
+    adata.obsm['SAVE'] = latent
+
+    bm = Benchmarker(
+        adata=adata,
+        batch_key="batch",
+        label_key='cell_type',
+        embedding_obsm_keys=['SAVE']
+    )
+    bm.benchmark()
+    resdf = bm.get_results(min_max_scale=False)
+    resdf.to_csv(f"./ckpt/SAVE_MI_1016_warmup_opt.pt")
+
+    print(resdf)
 
 
 if __name__ == "__main__":
-    # os.environ['WANDB_MODE'] = 'offline'
     do_train()
