@@ -29,12 +29,19 @@ def do_train():
 
     kwargs.update(setting["SAVE-B"]["train"])
     kwargs.update(setting["SAVE-B"]["model"])
-    kwargs["iter"] = 5000
-    kwargs["batch_size"] = 48
 
-    kwargs["lr"] = 0.0008761953163128317
-    kwargs["expand_dim"] = 32
-    kwargs["weight_decay"] = 2.4443717513092533e-05
+    kwargs["iter"] = 5000
+    kwargs["lr_milestone"] = 2000
+    kwargs["lr"] = 0.0016374239273347798
+    kwargs["weight_decay"] = 0.00027092871182009536
+    kwargs["cov_scale"] = 1
+    kwargs["cls_scale"] = 2
+    kwargs["expand_dim"] = 512
+    kwargs["enc_dim"] = 8
+
+    kwargs["kl_scale"] = 2
+    kwargs["capacity"] = 0
+    kwargs["capacity_milestone"] = 2000
 
     from model.save_model import SAVE
 
@@ -45,22 +52,28 @@ def do_train():
         condition_cols=["batch"],
         **kwargs,
     )
-    save_model.load_ckpt(f"./ckpt/SAVE_MI_1016_warmup_opt.pt")
-    latent = save_model.get_latent(batch_size=32)
+    # for i in range(0, 5001, 100):
+    save_model.load_ckpt(f"./ckpt/SAVE_1022_cov_capacity_pancreas.pt")
+    latent = save_model.get_latent(batch_size=1024, latent_pos=0)
+    print(latent.shape)
+    latent2 = save_model.get_latent(batch_size=1024, latent_pos=1)
+    print(latent2.shape)
+
     adata.obsm['SAVE'] = latent
+    adata.obsm['SAVE_mu'] = latent2
 
     bm = Benchmarker(
         adata=adata,
         batch_key="batch",
         label_key='cell_type',
-        embedding_obsm_keys=['SAVE']
+        embedding_obsm_keys=['SAVE', 'SAVE_mu']
     )
     bm.benchmark()
     resdf = bm.get_results(min_max_scale=False)
-    resdf.to_csv(f"./ckpt/SAVE_MI_1016_warmup_opt.pt")
-
+    resdf.to_csv(f"./result/SAVE_1022_cov_capacity_pancreas.csv")
     print(resdf)
 
 
 if __name__ == "__main__":
+    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
     do_train()

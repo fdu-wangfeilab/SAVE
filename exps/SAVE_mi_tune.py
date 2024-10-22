@@ -3,6 +3,8 @@ import scanpy as sc
 import numpy as np
 import torch
 import wandb
+from scib_metrics.benchmark import Benchmarker
+import argparse
 
 import os
 import sys
@@ -41,32 +43,57 @@ def do_train(config):
     kwargs.update(setting["SAVE-B"]["train"])
     kwargs.update(setting["SAVE-B"]["model"])
     kwargs["iter"] = 5000
-    kwargs["lr_milestone"] = config["lr_milestone"]
-
-    kwargs["lr"] = config["lr"]
-    kwargs["weight_decay"] = config["weight_decay"]
+    # kwargs["lr_milestone"] = config["lr_milestone"]
+    # kwargs["lr"] = config["lr"]
+    # kwargs["weight_decay"] = config["weight_decay"]
+    kwargs["expand_dim"] = 256
+    kwargs["lr_milestone"] = 2000
+    kwargs["capacity_milestone"] = 2000
+    kwargs["enc_dim"] = 8
+    kwargs["cls_scale"] = 100
+    kwargs["cov_scale"] = 1
+    kwargs.update(config)
 
     from model.save_model import SAVE
 
-    run = wandb.init(project="SAVE_mi", config=kwargs)
+    # run = wandb.init(project="SAVE_mi", config=kwargs)
     save_model = SAVE(
         adata=adata.copy(),
         is_initialized=True,
         condition_cols=["batch"],
         **kwargs,
     )
-    save_model.train(loss_monitor=run, session=session, **kwargs)
+    save_model.train(loss_monitor=None, session=None, **kwargs)
+
+    save_model.device = torch.device("cpu")
+    latent = save_model.get_latent(batch_size=1024, latent_pos=0)
+    adata.obsm["SAVE"] = latent
+
+    bm = Benchmarker(
+        adata=adata,
+        batch_key="batch",
+        label_key="cell_type",
+        embedding_obsm_keys=["SAVE"],
+    )
+    bm.benchmark()
+    resdf = bm.get_results(min_max_scale=False)
+    scib_score = resdf["Total"][0]
+    session.report({"loss": scib_score})
 
 
-def ray_tune():
+def ray_tune(args):
     ray.init(num_cpus=40, num_gpus=1)
     tracemalloc.start()
     search_space = {
-        "lr": tune.loguniform(1e-6, 5e-3),
-        # "expand_dim": tune.choice([8, 16, 32]),
-        # "mi_scale": tune.choice([0.1, 0.01, 0.001, 1e-4]),
-        "lr_milestone": tune.choice([500, 1000, 2000]),
-        "weight_decay": tune.loguniform(1e-5, 1e-3),
+        "lr": tune.loguniform(1e-4, 1e-3),
+        # "lr_milestone": tune.choice([500, 1000, 2000]),
+        "weight_decay": tune.loguniform(1e-4, 1e-3),
+        # "expand_dim": tune.choice([256]),
+        # "enc_dim": tune.choice([8]),
+        "kl_scale": tune.choice([50, 100, 150, 200]),
+        "capacity": tune.choice(list(np.arange(25, 301, 25).astype(int))),
+        # "cov_scale": tune.choice([1, 2, 5, 10]),
+        # "cls_scale": tune.choice([1, 2, 5, 10]),
     }
 
     scheduler = ASHAScheduler(max_t=5000, grace_period=10, reduction_factor=4)
@@ -74,21 +101,26 @@ def ray_tune():
     optuna_search = OptunaSearch()
 
     tuner = tune.Tuner(
-        tune.with_resources(tune.with_parameters(do_train), resources={"gpu": 1}),
+        tune.with_resources(tune.with_parameters(do_train), resources={"gpu": 0.25}),
         tune_config=tune.TuneConfig(
             search_alg=optuna_search,
             scheduler=scheduler,
-            num_samples=50,
+            num_samples=500,
             metric="loss",
-            mode="min",
+            mode="max",
         ),
         param_space=search_space,
     )
 
-    results = tuner.fit()
+    tuner.fit()
 
 
 if __name__ == "__main__":
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    # args = argparse.ArgumentParser()
+    # args.add_argument('--kl_scale', type=float, default=2)
+    # args.add_argument('--capacity', type=int, default=15)
+    # args = args.parse_args()
+
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     os.environ["RAY_SESSION_DIR"] = "/home/lijiahao/ray_session"
-    ray_tune()
+    ray_tune(None)

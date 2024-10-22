@@ -183,8 +183,13 @@ class SAVE:
         is_lr_scheduler: bool = False,
         col_msk_threshold: int = -1,
         loss_monitor = None,
-        mi_scale = None,
+        cov_scale = None,
+        cls_scale = None,
+        kl_scale = None,
+        capacity = None,
+        capacity_milestone = None,
         session = None,
+        is_period_save = False,
         **kwargs,
     ):
 
@@ -196,8 +201,7 @@ class SAVE:
         )
 
         # if epoch * len(dataloader) < iter:
-
-        # epoch = int(iter / len(dataloader))
+        #     epoch = int(iter / len(dataloader))
         # print(f"total iter: {epoch * len(dataloader)}")
 
         self.model.to(self.device)
@@ -207,7 +211,10 @@ class SAVE:
             dataloader=dataloader,
             num_step=iter,
             device=self.device,
-            kl_scale=0.5,
+            kl_scale=kl_scale,
+            cls_scale=cls_scale,
+            capacity= capacity,
+            capacity_milestone=capacity_milestone,
             is_tensorboard=False,
             grad_clip=is_grad_clip,
             lr=lr,
@@ -217,9 +224,10 @@ class SAVE:
             is_lr_scheduler=is_lr_scheduler,
             col_msk_threshold=col_msk_threshold,
             loss_monitor = loss_monitor,
-            mi_scale=mi_scale,
+            cov_scale=cov_scale,
             session = session,
             num_class = self.cond_idx_max,
+            is_period_save= is_period_save,
         )
 
         self.is_trained = True
@@ -340,7 +348,7 @@ class SAVE:
                 idx.long().to(self.device),
             )
 
-            z, mu, var = self.model.encoder(x)
+            z = self.model.encoder(x)[0]
             recon_x = self.model.decoder(
                 z, idx, col_msk_threshold=-1
             )

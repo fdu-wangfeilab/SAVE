@@ -27,13 +27,18 @@ def do_train():
 
     kwargs.update(setting["SAVE-B"]["train"])
     kwargs.update(setting["SAVE-B"]["model"])
-    kwargs['iter'] = 5000
-    kwargs["batch_size"] = 1024
-    kwargs['lr_milestone'] = 1000
+    kwargs["iter"] = 5000
+    kwargs["lr_milestone"] = 2000
+    kwargs["lr"] = 0.0004971869093472658
+    kwargs["weight_decay"] = 0.0005638976710982813
+    kwargs["cov_scale"] = 1
+    kwargs["cls_scale"] = 10
+    kwargs["expand_dim"] = 512
+    kwargs["enc_dim"] = 8
 
-    kwargs['lr'] = 0.00475898
-    kwargs['expand_dim'] = 16
-    kwargs['weight_decay'] = 6.83645e-05
+    kwargs["kl_scale"] = 2
+    kwargs["capacity"] = 0
+    kwargs["capacity_milestone"] = 2000
 
     from model.save_model import SAVE
 
@@ -44,10 +49,10 @@ def do_train():
         condition_cols=["batch"],
         **kwargs,
     )
-    save_model.train(loss_monitor=run, session=None, **kwargs)
-    save_model.save_ckpt('./ckpt/SAVE_MI_loss_1016_warmup.pt')
+    save_model.train(loss_monitor=run, session=None, is_period_save=False, **kwargs)
+    save_model.save_ckpt("./ckpt/SAVE_1022_cov_capacity_pancreas.pt")
 
 
 if __name__ == "__main__":
-    # os.environ['WANDB_MODE'] = 'offline'
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     do_train()

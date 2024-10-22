@@ -280,9 +280,10 @@ def convert_adata_to_dataloader(
     return DataLoader(
         dataset=dataset,
         batch_size=batch_size,
-        num_workers=4,
+        num_workers=16,
         shuffle=is_shuffle,
         drop_last=is_droplast,
+        pin_memory=True,
     )
 
 

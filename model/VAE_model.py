@@ -50,7 +50,6 @@ class Attention(nn.Module):
         return x
 
 
-
 class DiTblock(nn.Module):
     # adaLN -> attn -> mlp
     def __init__(self, feature_dim=2000, mlp_ratio=4.0, num_heads=10, **kwargs) -> None:
@@ -92,15 +91,10 @@ class DiTblock(nn.Module):
             )
 
         else:
-            x = x * self.attn(
-                self.norm1(x)
-            )
+            x = x * self.attn(self.norm1(x))
 
-            x = x  * self.mlp(
-                self.norm2(x)
-            )
+            x = x * self.mlp(self.norm2(x))
         return x
-
 
 
 class TimestepEmbedder(nn.Module):
@@ -228,8 +222,8 @@ class AttentionEncoder(nn.Module):
         self.var_enc = nn.Sequential(nn.Linear(expand_dim * hidden_dim, enc_dim))
         self.mu_enc = nn.Sequential(nn.Linear(expand_dim * hidden_dim, enc_dim))
 
-        # self.var_enc = nn.Sequential(nn.Linear(expand_dim * input_dim, enc_dim))
-        # self.mu_enc = nn.Sequential(nn.Linear(expand_dim * input_dim, enc_dim))
+        self.var_enc_dis = nn.Sequential(nn.Linear(expand_dim * hidden_dim, enc_dim))
+        self.mu_enc_dis = nn.Sequential(nn.Linear(expand_dim * hidden_dim, enc_dim))
 
     def reparameterize(self, mu, var):
         return Normal(mu, var.sqrt()).rsample()
@@ -249,7 +243,12 @@ class AttentionEncoder(nn.Module):
         var = torch.clamp(torch.exp(self.var_enc(h)), min=1e-20)
         z = self.reparameterize(mu, var)
 
-        return z, mu, var
+        # disentangle module
+        mu_dis = self.mu_enc_dis(h)
+        var_dis = torch.clamp(torch.exp(self.var_enc_dis(h)), min=1e-20)
+        z_dis = self.reparameterize(mu_dis, var_dis)
+
+        return z, mu, var, z_dis, mu_dis, var_dis
 
 
 class FinalLayer(nn.Module):
@@ -358,7 +357,7 @@ class AttentionDecoder(nn.Module):
         x,
         y: torch.Tensor = None,
         col_msk_threshold=0.8,
-        row_msk_threshold=None, # cancel row msk
+        row_msk_threshold=None,  # cancel row msk
         target_msk_col=None,
     ):
         if self.block_type == "adaLN":
@@ -401,18 +400,50 @@ class AttentionDecoder(nn.Module):
 
 
 class QNetwork(nn.Module):
-    def __init__(self, z_dim, c_dim):
+    def __init__(
+        self, z_dim, c_dim, expand_dim, depth, num_heads, bn_affine, norm_type
+    ) -> None:
         super(QNetwork, self).__init__()
-        self.fc = nn.Sequential(
-            nn.Linear(z_dim, 128),
-            nn.ReLU(),
-            nn.Linear(128, 128),
-            nn.ReLU(),
-            nn.Linear(128, c_dim),
-        )
+        self.blks = nn.ModuleList()
+        self.input_dim = z_dim
+        self.expand_dim = expand_dim
+
+        self.reshape_layer = nn.Linear(1, expand_dim)
+
+        for _ in range(depth):
+            self.blks.append(
+                AttentionBlock(
+                    feature_dim=z_dim,
+                    expand_dim=expand_dim,
+                    mlp_ratio=4.0,
+                    num_heads=num_heads,
+                    affine=bn_affine,
+                    norm_type=norm_type,
+                )
+            )
+
+        self.out_layer = nn.Sequential(nn.Linear(z_dim * expand_dim, c_dim))
+
+        self.initialize_weights()
+
+    def initialize_weights(self):
+        # Initialize transformer layers:
+        def _basic_init(module):
+            if isinstance(module, nn.Linear):
+                torch.nn.init.xavier_uniform_(module.weight)
+                if module.bias is not None:
+                    nn.init.constant_(module.bias, 0)
+
+        self.apply(_basic_init)
+
 
     def forward(self, z):
-        return F.softmax(self.fc(z), dim=-1)  # 输出 c 的概率分布
+        h = self.reshape_layer(z.unsqueeze(-1))
+        for blk in self.blks:
+            h = blk(h)
+        h = einops.rearrange(h, "c h e -> c (h e)")
+        return F.softmax(self.out_layer(h), dim=-1)  # 输出 c 的概率分布
+
 
 class VAE(nn.Module):
     def __init__(
@@ -431,7 +462,7 @@ class VAE(nn.Module):
         dec_blk_type="adaLN",
         is_initialize=False,
         len_col_comb=None,
-        num_class= None,
+        num_class=None,
     ) -> None:
         super().__init__()
         # for parameter record
@@ -460,7 +491,15 @@ class VAE(nn.Module):
             norm_type=enc_norm_type,
         )
 
-        self.q_net = QNetwork(enc_dim, num_class)
+        self.q_net = QNetwork(
+            z_dim=enc_dim,
+            c_dim=num_class,
+            expand_dim=expand_dim,
+            depth=dec_depth,
+            num_heads=dec_num_heads,
+            bn_affine=enc_affine,
+            norm_type=enc_norm_type,
+        )
 
         self.decoder = AttentionDecoder(
             input_dim=enc_dim,
