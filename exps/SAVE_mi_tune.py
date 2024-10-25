@@ -27,7 +27,7 @@ from model.utils.process_h5ad import batch_scale, preprocessing_rna
 
 
 def do_train(config):
-    adata = sc.read_h5ad("/home/lijiahao/workbench/SAVE/processed_pancreas.h5ad")
+    adata = sc.read_h5ad("/home/lijiahao/workbench/SAVE/processed_pbmc.h5ad")
     device = torch.device("cuda:0")
     seed = 1202
     kwargs = {
@@ -46,12 +46,13 @@ def do_train(config):
     # kwargs["lr_milestone"] = config["lr_milestone"]
     # kwargs["lr"] = config["lr"]
     # kwargs["weight_decay"] = config["weight_decay"]
+    kwargs["iter"] = 5000
     kwargs["expand_dim"] = 256
     kwargs["lr_milestone"] = 2000
     kwargs["capacity_milestone"] = 2000
-    kwargs["enc_dim"] = 8
-    kwargs["cls_scale"] = 100
+    kwargs["cls_scale"] = 200
     kwargs["cov_scale"] = 1
+
     kwargs.update(config)
 
     from model.save_model import SAVE
@@ -66,7 +67,7 @@ def do_train(config):
     save_model.train(loss_monitor=None, session=None, **kwargs)
 
     save_model.device = torch.device("cpu")
-    latent = save_model.get_latent(batch_size=1024, latent_pos=0)
+    latent = save_model.get_latent(batch_size=1024)[:, : -config["enc_dim"] // 4]
     adata.obsm["SAVE"] = latent
 
     bm = Benchmarker(
@@ -75,6 +76,7 @@ def do_train(config):
         label_key="cell_type",
         embedding_obsm_keys=["SAVE"],
     )
+
     bm.benchmark()
     resdf = bm.get_results(min_max_scale=False)
     scib_score = resdf["Total"][0]
@@ -89,9 +91,9 @@ def ray_tune(args):
         # "lr_milestone": tune.choice([500, 1000, 2000]),
         "weight_decay": tune.loguniform(1e-4, 1e-3),
         # "expand_dim": tune.choice([256]),
-        # "enc_dim": tune.choice([8]),
-        "kl_scale": tune.choice([50, 100, 150, 200]),
-        "capacity": tune.choice(list(np.arange(25, 301, 25).astype(int))),
+        "enc_dim": tune.choice([8, 16, 32, 64]),
+        "kl_scale": tune.choice([2, 4, 8, 16, 32, 150]),
+        "capacity": tune.choice([0, 5, 25, 50]),
         # "cov_scale": tune.choice([1, 2, 5, 10]),
         # "cls_scale": tune.choice([1, 2, 5, 10]),
     }
@@ -101,11 +103,11 @@ def ray_tune(args):
     optuna_search = OptunaSearch()
 
     tuner = tune.Tuner(
-        tune.with_resources(tune.with_parameters(do_train), resources={"gpu": 0.25}),
+        tune.with_resources(tune.with_parameters(do_train), resources={"gpu": 0.5}),
         tune_config=tune.TuneConfig(
             search_alg=optuna_search,
             scheduler=scheduler,
-            num_samples=500,
+            num_samples=100,
             metric="loss",
             mode="max",
         ),

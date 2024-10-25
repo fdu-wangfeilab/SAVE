@@ -219,11 +219,11 @@ class AttentionEncoder(nn.Module):
                 )
             )
 
-        self.var_enc = nn.Sequential(nn.Linear(expand_dim * hidden_dim, enc_dim))
-        self.mu_enc = nn.Sequential(nn.Linear(expand_dim * hidden_dim, enc_dim))
+        self.var_enc = nn.Sequential(nn.Linear(expand_dim * hidden_dim, enc_dim ))
+        self.mu_enc = nn.Sequential(nn.Linear(expand_dim * hidden_dim, enc_dim ))
 
-        self.var_enc_dis = nn.Sequential(nn.Linear(expand_dim * hidden_dim, enc_dim))
-        self.mu_enc_dis = nn.Sequential(nn.Linear(expand_dim * hidden_dim, enc_dim))
+        # self.var_enc_dis = nn.Sequential(nn.Linear(expand_dim * hidden_dim, enc_dim))
+        # self.mu_enc_dis = nn.Sequential(nn.Linear(expand_dim * hidden_dim, enc_dim))
 
     def reparameterize(self, mu, var):
         return Normal(mu, var.sqrt()).rsample()
@@ -242,13 +242,14 @@ class AttentionEncoder(nn.Module):
         # make sure var>0
         var = torch.clamp(torch.exp(self.var_enc(h)), min=1e-20)
         z = self.reparameterize(mu, var)
+        z_dis = z.chunk(4, dim=1)[-1]
 
         # disentangle module
-        mu_dis = self.mu_enc_dis(h)
-        var_dis = torch.clamp(torch.exp(self.var_enc_dis(h)), min=1e-20)
-        z_dis = self.reparameterize(mu_dis, var_dis)
+        # mu_dis = self.mu_enc_dis(h)
+        # var_dis = torch.clamp(torch.exp(self.var_enc_dis(h)), min=1e-20)
+        # z_dis = self.reparameterize(mu_dis, var_dis)
 
-        return z, mu, var, z_dis, mu_dis, var_dis
+        return z, mu, var, z_dis, None, None
 
 
 class FinalLayer(nn.Module):
@@ -307,6 +308,7 @@ class AttentionDecoder(nn.Module):
         if block_type == "dsbn":
             pass
         elif block_type == "adaLN":
+            # self.in_layer = nn.Linear(input_dim, hidden_dim)
             self.reshape_layer = nn.Linear(1, expand_dim)
 
             self.batch_embedder = TimestepEmbedder(hidden_size=expand_dim)
@@ -321,7 +323,7 @@ class AttentionDecoder(nn.Module):
                 )
 
         self.out_layer = nn.Sequential(
-            nn.Linear(hidden_dim * expand_dim, out_dim), nn.Sigmoid()
+            nn.Linear(input_dim * expand_dim, out_dim), nn.Sigmoid()
         )
 
         if is_norm_init:
@@ -385,6 +387,7 @@ class AttentionDecoder(nn.Module):
                 row_msk = row_msk.expand(c.shape)
                 c = c * row_msk
 
+            # x = self.in_layer(x)
             h = self.reshape_layer(x.unsqueeze(-1))
             for blk in self.blks:
                 h = blk(h, c)
@@ -401,7 +404,15 @@ class AttentionDecoder(nn.Module):
 
 class QNetwork(nn.Module):
     def __init__(
-        self, z_dim, c_dim, expand_dim, depth, num_heads, bn_affine, norm_type
+        self,
+        z_dim,
+        hidden_dim,
+        expand_dim,
+        depth,
+        num_heads,
+        bn_affine,
+        norm_type,
+        cond_dict,
     ) -> None:
         super(QNetwork, self).__init__()
         self.blks = nn.ModuleList()
@@ -409,6 +420,7 @@ class QNetwork(nn.Module):
         self.expand_dim = expand_dim
 
         self.reshape_layer = nn.Linear(1, expand_dim)
+        self.cond_dict = cond_dict
 
         for _ in range(depth):
             self.blks.append(
@@ -421,8 +433,10 @@ class QNetwork(nn.Module):
                     norm_type=norm_type,
                 )
             )
-
-        self.out_layer = nn.Sequential(nn.Linear(z_dim * expand_dim, c_dim))
+        self.out_layer = nn.ModuleList()
+        for key in cond_dict:
+            num_class = max(cond_dict[key].values()) - min(cond_dict[key].values()) + 1
+            self.out_layer.append(nn.Linear(z_dim * expand_dim, num_class))
 
         self.initialize_weights()
 
@@ -436,13 +450,18 @@ class QNetwork(nn.Module):
 
         self.apply(_basic_init)
 
-
-    def forward(self, z):
+    def forward(self, z, c, criterion):
         h = self.reshape_layer(z.unsqueeze(-1))
         for blk in self.blks:
             h = blk(h)
         h = einops.rearrange(h, "c h e -> c (h e)")
-        return F.softmax(self.out_layer(h), dim=-1)  # 输出 c 的概率分布
+        cls_loss = {}
+        for i, key in enumerate(self.cond_dict):
+            c_pred = F.softmax(self.out_layer[i](h), dim=1)
+            c_loss = criterion(c_pred, c[:, i] - min(self.cond_dict[key].values()))
+            cls_loss[key] = c_loss
+
+        return cls_loss
 
 
 class VAE(nn.Module):
@@ -463,6 +482,7 @@ class VAE(nn.Module):
         is_initialize=False,
         len_col_comb=None,
         num_class=None,
+        cond_dict=None,
     ) -> None:
         super().__init__()
         # for parameter record
@@ -492,18 +512,19 @@ class VAE(nn.Module):
         )
 
         self.q_net = QNetwork(
-            z_dim=enc_dim,
-            c_dim=num_class,
+            z_dim=enc_dim // 4,
+            hidden_dim=hidden_dim,
             expand_dim=expand_dim,
             depth=dec_depth,
             num_heads=dec_num_heads,
             bn_affine=enc_affine,
             norm_type=enc_norm_type,
+            cond_dict=cond_dict,
         )
 
         self.decoder = AttentionDecoder(
             input_dim=enc_dim,
-            hidden_dim=enc_dim,
+            hidden_dim=hidden_dim,
             expand_dim=expand_dim,
             num_heads=dec_num_heads,
             depth=dec_depth,

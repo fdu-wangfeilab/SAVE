@@ -151,37 +151,37 @@ def vae_train(
                 col_msk_threshold=col_msk_threshold,
             )
 
-            c_pred = vae.q_net(z_dis)
+            cls_loss = vae.q_net(z_dis, idx, F.cross_entropy)
 
             # using bce loss estimating the error
             recon_loss = F.binary_cross_entropy(recon_x, x) * x.size(-1)
-            cls_loss = F.cross_entropy(c_pred, idx.squeeze()) * cls_scale 
             kl_loss = (
                 torch.abs(kl_div(mu, var) - capacity * capacity_schedule[step - 1])
                 * kl_scale
             )
 
-            cov_loss = independence_loss(z, z_dis) * cov_scale
+            # cov_loss = independence_loss(z, z_dis) * cov_scale
             # mi_loss = mi_caculate(c_pred, idx, num_class, group_num) * mi_scale
             # kl_dis_loss = -kl_div_dis(mu, var, mu_dis, var_dis) * kl_scale * 0.01
 
             if loss_monitor is not None:
+                loss_dict = {
+                    "recon_loss": recon_loss,
+                    "kl_loss": kl_loss,
+                    "lr": optimizer.param_groups[0]["lr"],
+                    # "cov_loss": cov_loss,
+                    "mu": mu.mean(),
+                    "var": var.mean(),
+                    "capacity": capacity * capacity_schedule[step - 1],
+                }
+                loss_dict.update({k: v.item() * cls_scale for k, v in cls_loss.items()})
                 loss_monitor.log(
-                    {
-                        "recon_loss": recon_loss,
-                        "kl_loss": kl_loss,
-                        "lr": optimizer.param_groups[0]["lr"],
-                        "cov_loss": cov_loss,
-                        "cls_loss": cls_loss,
-                        "mu": mu.mean(),
-                        "var": var.mean(),
-                        "capacity": capacity * capacity_schedule[step - 1],
-                    }
+                    loss_dict,
                 )
 
             loss = {
-                "cov_loss": cov_loss,
-                "cls_loss": cls_loss,
+                # "cov_loss": cov_loss,
+                "cls_loss": sum(cls_loss.values()) * cls_scale,
                 "recon_loss": recon_loss,
                 "kl_loss": kl_loss,
             }

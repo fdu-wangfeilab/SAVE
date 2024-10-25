@@ -139,6 +139,7 @@ class SAVE:
             is_initialize=is_initialized,
             len_col_comb=len(self.condition_cols),
             num_class = self.cond_idx_max,
+            cond_dict = self.condition_dict,
         )
 
         if is_initialized:
